@@ -1,0 +1,347 @@
+"""音乐管理路由"""
+
+import base64
+import json
+import urllib.parse
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+)
+from fastapi.responses import RedirectResponse
+
+from xiaohub.api.dependencies import (
+    app,
+    log,
+    verification,
+)
+from xiaohub.api.models import (
+    DidPlayMusic,
+    MusicInfoObj,
+    MusicInfosQuery,
+    MusicItem,
+)
+
+router = APIRouter(dependencies=[Depends(verification)])
+
+
+@router.get("/searchmusic")
+def searchmusic(name: str = ""):
+    """搜索音乐"""
+    return app.music_library.searchmusic(name)
+
+
+"""======================在线搜索相关接口============================="""
+
+
+@router.get("/api/search/online")
+async def search_online_music(
+    keyword: str = Query(..., description="搜索关键词"),
+    plugin: str = Query("all", description="指定插件名称，all表示搜索所有插件"),
+    page: int = Query(1, description="页码"),
+    limit: int = Query(20, description="每页数量"),
+    api_type: int = Query(
+        None, description="接口类型：1=MusicFree，2=LXServer"
+    ),  # 🌟 接收前端传来的 api_type
+):
+    """在线音乐搜索API"""
+    try:
+        if not keyword:
+            return {"success": False, "error": "Keyword required"}
+
+        return await app.get_music_list_online(
+            keyword=keyword, plugin=plugin, page=page, limit=limit, api_type=api_type
+        )
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/api/search/online_playlist")
+async def search_online_playlist(
+    keyword: str = Query(..., description="搜索关键词"),
+    plugin: str = Query("all", description="指定平台名称"),
+    page: int = Query(1, description="页码"),
+    limit: int = Query(20, description="每页数量"),
+    api_type: int = Query(None, description="接口类型：1=MusicFree，2=LXServer"),
+):
+    """在线歌单搜索API"""
+    try:
+        if not keyword:
+            return {"success": False, "error": "Keyword required"}
+
+        return await app.get_playlist_online(
+            keyword=keyword, plugin=plugin, page=page, limit=limit, api_type=api_type
+        )
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/api/search/online_playlist_detail")
+async def search_online_playlist_detail(
+    id: str = Query(..., description="歌单ID"),
+    plugin: str = Query(..., description="平台名称(如wy/kg)"),
+    api_type: int = Query(..., description="接口类型：1=MusicFree，2=LXServer"),
+):
+    """在线歌单详情获取API (歌单转歌曲)"""
+    try:
+        # 逻辑上 id, plugin, api_type 均由 Query(...) 强制要求，无需额外 if 判断
+        return await app.get_playlist_detail_online(
+            id=id, plugin=plugin, api_type=api_type
+        )
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/api/proxy/real-url")
+async def get_real_music_url(url: str = Query(..., description="原始url")):
+    """通过服务端代理获取真实的URL，不止是音频url,可能还有图片url"""
+    try:
+        # 获取真实的URL
+        real_url = await app.get_real_url_of_openapi(url)
+        # 直接重定向到真实URL
+        return RedirectResponse(url=real_url)
+
+    except Exception as e:
+        log.error(f"获取真实URL失败: {e}")
+        # 如果代理获取失败，重定向到原始URL
+        return RedirectResponse(url=url)
+
+
+@router.get("/api/proxy/plugin-url")
+async def get_plugin_source_url(
+    data: str = Query(..., description="json对象压缩的base64"),
+):
+    try:
+        # 获取请求数据
+        # 容错处理1：将 URL 传输中可能被误转为空格的 '+' 还原回去（win平台）
+        data = data.replace(" ", "+")
+        # 2. 容错处理：自动补全 Base64 缺失的 '=' 填充符（Linux平台）
+        missing_padding = len(data) % 4
+        if missing_padding:
+            data += "=" * (4 - missing_padding)
+
+        # 将Base64编码的URL解码为Json字符串
+        json_str = base64.b64decode(data).decode("utf-8")
+        # 将json字符串转换为json对象
+        json_data = json.loads(json_str)
+        # 调用公共函数处理
+        media_source = await app.online_music_service.get_media_source_url(
+            json_data
+        )
+        if media_source and media_source.get("url"):
+            source_url = media_source.get("url")
+            log.info(f"plugin-url 成功解析: {json_data} -> {source_url}")
+            return RedirectResponse(url=source_url)
+        else:
+            # 没有有效链接时，直接抛出 404 错误！
+            log.warning(f"plugin-url 解析失败(链接为空): {json_data}")
+            raise HTTPException(status_code=404, detail="获取真实音频链接为空")
+
+    except HTTPException:
+        # 允许 HTTPException 继续向上传递，确保 404 能被前线捕获
+        raise
+    except Exception as e:
+        log.error(f"获取真实音乐URL失败: {e}")
+        # 发生其他未知异常时，同样抛出错误
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.post("/api/play/getMediaSource")
+async def get_media_source(request: Request):
+    """获取音乐真实播放URL"""
+    try:
+        # 获取请求数据
+        data = await request.json()
+        # 调用公共函数处理
+        return await app.online_music_service.get_media_source_url(data)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/api/play/getLyric")
+async def get_media_lyric(request: Request):
+    """获取音乐歌词"""
+    try:
+        # 获取请求数据
+        data = await request.json()
+        # 调用公共函数处理
+        return await app.get_media_lyric(data)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/api/device/pushUrl")
+async def device_push_url(request: Request):
+    """推送url给设备端播放"""
+    try:
+        # 获取请求数据
+        data = await request.json()
+        did = data.get("did")
+        openapi_info = app.js_plugin_manager.get_lx_server_info()
+        if openapi_info.get("enabled", False):
+            url = data.get("url")
+        else:
+            # 调用公共函数处理,获取音乐真实播放URL
+            url = app.get_plugin_proxy_url(data)
+        decoded_url = urllib.parse.unquote(url)
+        return await app.play_url(did=did, arg1=decoded_url)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/api/device/pushList")
+async def device_push_list(request: Request):
+    """WEB前端推送歌单给设备端播放"""
+    try:
+        # 获取请求数据
+        data = await request.json()
+        did = data.get("did")
+        song_list = data.get("songList")
+        list_name = data.get("playlistName")
+        # 调用公共函数处理,处理歌曲信息 -> 添加歌单 -> 播放歌单
+        return await app.push_music_list_play(
+            did=did, song_list=song_list, list_name=list_name
+        )
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+"""======================在线搜索相关接口END============================="""
+
+
+@router.get("/playingmusic")
+def playingmusic(did: str = ""):
+    """当前播放音乐"""
+    if not app.did_exist(did):
+        return {"ret": "Did not exist"}
+
+    is_playing = app.isplaying(did)
+    cur_music = app.playingmusic(did)
+    cur_playlist = app.get_cur_play_list(did)
+    # 播放进度
+    offset, duration = app.get_offset_duration(did)
+    return {
+        "ret": "OK",
+        "is_playing": is_playing,
+        "cur_music": cur_music,
+        "cur_playlist": cur_playlist,
+        "offset": offset,
+        "duration": duration,
+    }
+
+
+@router.get("/musiclist")
+async def musiclist():
+    """音乐列表"""
+    return app.music_library.get_music_list()
+
+
+@router.get("/musicinfo")
+async def musicinfo(name: str, musictag: bool = False):
+    """音乐信息"""
+    url, _ = await app.music_library.get_music_url(name)
+    info = {
+        "ret": "OK",
+        "name": name,
+        "url": url,
+    }
+    if musictag:
+        info["tags"] = await app.music_library.get_music_tags(name)
+    return info
+
+
+@router.get("/musicinfos")
+async def musicinfos(
+    name: list[str] = Query(None),
+    musictag: bool = False,
+):
+    """批量音乐信息"""
+    ret = []
+    for music_name in name:
+        url, _ = await app.music_library.get_music_url(music_name)
+        info = {
+            "name": music_name,
+            "url": url,
+        }
+        if musictag:
+            info["tags"] = await app.music_library.get_music_tags(music_name)
+        ret.append(info)
+    return ret
+
+
+@router.post("/musicinfos")
+async def musicinfos_post(data: MusicInfosQuery):
+    """批量音乐信息（POST，避免 URL 过长）"""
+    ret = []
+    for music_name in data.name:
+        url, _ = await app.music_library.get_music_url(music_name)
+        info = {
+            "name": music_name,
+            "url": url,
+        }
+        if data.musictag:
+            info["tags"] = await app.music_library.get_music_tags(music_name)
+        ret.append(info)
+    return ret
+
+
+@router.post("/setmusictag")
+async def setmusictag(info: MusicInfoObj):
+    """设置音乐标签"""
+    ret = app.music_library.set_music_tag(info.musicname, info)
+    return {"ret": ret}
+
+
+@router.post("/delmusic")
+async def delmusic(data: MusicItem):
+    """删除音乐"""
+    log.info(data)
+    await app.del_music(data.name)
+    return "success"
+
+
+@router.post("/playmusic")
+async def playmusic(data: DidPlayMusic):
+    """播放音乐"""
+    did = data.did
+    musicname = data.musicname
+    searchkey = data.searchkey
+    if not app.did_exist(did):
+        return {"ret": "Did not exist"}
+
+    log.info(f"playmusic {did} musicname:{musicname} searchkey:{searchkey}")
+    await app.do_play(did, musicname, searchkey)
+    return {"ret": "OK"}
+
+
+@router.post("/refreshmusictag")
+async def refreshmusictag(Verifcation=Depends(verification)):
+    """刷新音乐标签"""
+    app.music_library.refresh_music_tag()
+    return {
+        "ret": "OK",
+    }
+
+
+@router.post("/debug_play_by_music_url")
+async def debug_play_by_music_url(request: Request, Verifcation=Depends(verification)):
+    """调试播放音乐URL"""
+    try:
+        data = await request.body()
+        data_dict = json.loads(data.decode("utf-8"))
+        log.info(f"data:{data_dict}")
+        return await app.debug_play_by_music_url(arg1=data_dict)
+    except json.JSONDecodeError as err:
+        raise HTTPException(status_code=400, detail="Invalid JSON") from err
+
+
+@router.post("/api/music/refreshlist")
+async def refreshlist(Verifcation=Depends(verification)):
+    """刷新歌曲列表"""
+    await app.gen_music_list()
+    return {
+        "ret": "OK",
+    }

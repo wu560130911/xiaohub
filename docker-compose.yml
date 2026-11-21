@@ -1,0 +1,39 @@
+name: xiaohub
+
+services:
+  xiaohub:
+    build: .
+    image: xiaohub:latest
+    container_name: xiaohub
+    hostname: xiaohub
+    network_mode: bridge
+    restart: unless-stopped
+
+    ports:
+      - target: 8090
+        published: "58090"
+        protocol: tcp
+
+    environment:
+      TZ: Asia/Shanghai
+      # 必须和上面 published 的端口一致，小爱靠这个端口取音乐
+      XIAOHUB_PUBLIC_PORT: "58090"
+      # 旧配置的默认值就是 192.168.2.5；不是你的 NAS IP 就改掉
+      XIAOHUB_HOSTNAME: http://192.168.2.5
+      # 语音控制总开关
+      XIAOHUB_ENABLE_PULL_ASK: "true"
+
+    volumes:
+      - type: bind
+        source: /vol1/1000/docker/xiaohub/config
+        target: /app/conf
+      - type: bind
+        source: /vol1/1000/docker/xiaohub/cache
+        target: /app/cache
+      - type: bind
+        source: /vol2/1000/media/music
+        target: /app/music
+      # 投影仪蓝牙用宿主机的 BlueZ，bridge 模式不影响 D-Bus
+      - type: bind
+        source: /run/dbus
+        target: /run/dbus

@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>投影仪配置 · XiaoHub</title>
+  <link rel="icon" href="/static/favicon.ico">
+  <link rel="stylesheet" href="/static/fonts/material-icons.css">
+  <style>
+    :root {
+      --bg: #0f1115;
+      --card: #171a21;
+      --line: #262b36;
+      --text: #e6e8ee;
+      --muted: #8b93a7;
+      --accent: #31c27c;
+      --danger: #e5484d;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    .wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }
+
+    header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+    header h1 { font-size: 20px; margin: 0; }
+    header .spacer { flex: 1; }
+    a { color: var(--accent); text-decoration: none; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 18px 18px 20px;
+      margin-bottom: 16px;
+    }
+
+    .card h2 {
+      font-size: 14px;
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-weight: 600;
+      letter-spacing: .04em;
+    }
+
+    .row { display: grid; grid-template-columns: 150px 1fr; gap: 10px; align-items: center; margin-bottom: 12px; }
+    .row > label { color: var(--muted); font-size: 13px; }
+
+    input[type="text"], input[type="number"], textarea, select {
+      width: 100%;
+      background: #0d0f14;
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: inherit;
+      outline: none;
+    }
+
+    input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+    textarea { min-height: 72px; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+
+    .inline { display: flex; gap: 8px; }
+    .inline > input { flex: 1; }
+
+    button {
+      background: #232834;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 14px;
+      font: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    button:hover { border-color: #3a4150; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #05130c; font-weight: 600; }
+    button.danger { color: #ffb4b4; border-color: #4a2426; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+
+    .hint { color: var(--muted); font-size: 12px; margin: -4px 0 12px 160px; }
+    .check { display: flex; align-items: center; gap: 8px; color: var(--text); }
+    .check input { width: 16px; height: 16px; }
+
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+
+    #status {
+      margin-bottom: 16px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: #12151b;
+      display: none;
+    }
+
+    #status.ok { display: block; border-color: #1f5138; color: #9ae6b4; }
+    #status.err { display: block; border-color: #5a2629; color: #ffb4b4; }
+
+    #candidates { margin-top: 10px; display: grid; gap: 8px; }
+    .candidate {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      cursor: pointer;
+      background: #12151b;
+    }
+    .candidate:hover { border-color: var(--accent); }
+    .candidate code { color: var(--accent); font-size: 12px; word-break: break-all; }
+    .candidate .meta { color: var(--muted); font-size: 12px; margin-left: auto; white-space: nowrap; }
+
+    @media (max-width: 560px) {
+      .row { grid-template-columns: 1fr; gap: 4px; }
+      .hint { margin-left: 0; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <header>
+      <h1>投影仪配置</h1>
+      <span class="spacer"></span>
+      <a href="/">返回控制台</a>
+    </header>
+
+    <div id="status"></div>
+
+    <div class="card">
+      <h2>连接</h2>
+      <div class="row">
+        <label for="enabled">启用服务</label>
+        <label class="check"><input type="checkbox" id="enabled"> 启用投影仪语音控制</label>
+      </div>
+      <div class="row">
+        <label for="ip">投影仪 IP</label>
+        <input type="text" id="ip" placeholder="192.168.31.50">
+      </div>
+      <div class="row">
+        <label for="adapter">蓝牙适配器</label>
+        <select id="adapter"></select>
+      </div>
+      <div class="row">
+        <label for="token">开机 token</label>
+        <div class="inline">
+          <input type="text" id="token" maxlength="50" spellcheck="false"
+                 placeholder="32 位遥控器/安卓，或 42 位 iPhone">
+          <button id="scan">扫描开机包</button>
+        </div>
+      </div>
+      <p class="hint" id="scan-hint">遥控器：把投影仪电源拔掉，连续短按电源键 20 次以上。手机 App：投影仪插电待机，直接用极米 App 点开机。安卓 token 的首字节会自动递增并保存，不用手动改；填手机抓到的原始 00 包即可，第一次会自动发 01。</p>
+      <div id="candidates"></div>
+    </div>
+
+    <div class="card">
+      <h2>语音口令</h2>
+      <div class="row">
+        <label for="on">开机口令</label>
+        <input type="text" id="on" placeholder="打开投影, 开投影">
+      </div>
+      <div class="row">
+        <label for="off">关机口令</label>
+        <input type="text" id="off" placeholder="关闭投影, 关投影">
+      </div>
+      <p class="hint">多个口令用逗号分隔；口语化的「把投影打开」也会自动识别。</p>
+    </div>
+
+    <div class="card">
+      <h2>高级</h2>
+      <div class="row">
+        <label for="alive_ports">状态探测端口</label>
+        <input type="text" id="alive_ports" placeholder="554,16735,16750,80,8080,443">
+      </div>
+      <div class="row">
+        <label for="adv_rounds">广播轮数</label>
+        <input type="number" id="adv_rounds" min="1" max="5">
+      </div>
+      <div class="row">
+        <label for="off_cooldown">关机冷却（秒）</label>
+        <input type="number" id="off_cooldown" min="0" max="300">
+      </div>
+      <div class="row">
+        <label for="off_presses">关机按键次数</label>
+        <input type="number" id="off_presses" min="1" max="10">
+      </div>
+      <div class="row">
+        <label for="off_interval">关机按键间隔（秒）</label>
+        <input type="number" id="off_interval" min="0.1" max="5" step="0.1">
+      </div>
+      <div class="row">
+        <label>语音反馈</label>
+        <label class="check"><input type="checkbox" id="feedback"> 命中后让小爱回一句</label>
+      </div>
+      <div class="row">
+        <label>开机播报</label>
+        <label class="check"><input type="checkbox" id="announce_ready"> 上线后播报「投影好了」</label>
+      </div>
+      <div class="row">
+        <label for="actions">按键映射</label>
+        <textarea id="actions" placeholder='{"投影静音":"volumemute"}'></textarea>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="save">保存配置</button>
+      <button id="test-on">测试开机</button>
+      <button id="test-off" class="danger">测试关机</button>
+      <button id="refresh-status">查询状态</button>
+    </div>
+  </div>
+
+  <script>
+    const $ = (sel) => document.querySelector(sel);
+
+    function setStatus(text, kind = "") {
+      const el = $("#status");
+      el.textContent = text;
+      el.className = kind;
+    }
+
+    function splitWords(value) {
+      return String(value || "").split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+    }
+
+    async function api(url, options = {}) {
+      const resp = await fetch(url, {
+        headers: { "Content-Type": "application/json" },
+        ...options,
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.detail || data.message || `HTTP ${resp.status}`);
+      return data;
+    }
+
+    async function loadAdapters(current) {
+      const select = $("#adapter");
+      select.innerHTML = "";
+      try {
+        const data = await api("/api/xgimi/adapters");
+        const adapters = data.adapters || [];
+        if (!adapters.length) {
+          select.innerHTML = `<option value="hci0">hci0（未检测到 BlueZ）</option>`;
+          return;
+        }
+        for (const item of adapters) {
+          const name = item.path.split("/").pop();
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = `${name} · ${item.name}`;
+          select.appendChild(opt);
+        }
+        if (current) select.value = current;
+      } catch (err) {
+        select.innerHTML = `<option value="hci0">hci0</option>`;
+      }
+    }
+
+    async function load() {
+      try {
+        const data = await api("/api/xgimi/config");
+        const cfg = data.config || {};
+        $("#enabled").checked = cfg.enabled !== false;
+        $("#ip").value = cfg.ip || "";
+        $("#token").value = cfg.token || "";
+        $("#on").value = (cfg.on || []).join(", ");
+        $("#off").value = (cfg.off || []).join(", ");
+        $("#alive_ports").value = cfg.alive_ports || "554,16735,16750,80,8080,443";
+        $("#adv_rounds").value = cfg.adv_rounds ?? 2;
+        $("#off_cooldown").value = cfg.off_cooldown ?? 30;
+        $("#off_presses").value = cfg.off_presses ?? 3;
+        $("#off_interval").value = cfg.off_interval ?? 0.8;
+        $("#feedback").checked = cfg.feedback !== false;
+        $("#announce_ready").checked = cfg.announce_ready !== false;
+        $("#actions").value = cfg.actions && Object.keys(cfg.actions).length
+          ? JSON.stringify(cfg.actions, null, 2) : "";
+        await loadAdapters(cfg.adapter || "hci0");
+      } catch (err) {
+        setStatus(`读取配置失败：${err.message}`, "err");
+      }
+    }
+
+    async function save() {
+      let actions = {};
+      const rawActions = $("#actions").value.trim();
+      if (rawActions) {
+        try { actions = JSON.parse(rawActions); }
+        catch { setStatus("按键映射不是合法 JSON", "err"); return; }
+      }
+      const body = {
+        enabled: $("#enabled").checked,
+        ip: $("#ip").value.trim(),
+        adapter: $("#adapter").value || "hci0",
+        token: $("#token").value.trim(),
+        on: splitWords($("#on").value),
+        off: splitWords($("#off").value),
+        alive_ports: $("#alive_ports").value.trim(),
+        adv_rounds: Number($("#adv_rounds").value || 2),
+        off_cooldown: Number($("#off_cooldown").value || 30),
+        off_presses: Number($("#off_presses").value || 3),
+        off_interval: Number($("#off_interval").value || 0.8),
+        feedback: $("#feedback").checked,
+        announce_ready: $("#announce_ready").checked,
+        actions,
+      };
+      try {
+        setStatus("保存中…");
+        await api("/api/xgimi/config", { method: "POST", body: JSON.stringify(body) });
+        setStatus("已保存，服务已重新加载", "ok");
+        await load();
+      } catch (err) {
+        setStatus(`保存失败：${err.message}`, "err");
+      }
+    }
+
+    async function scan() {
+      const btn = $("#scan");
+      const hint = $("#scan-hint");
+      $("#candidates").innerHTML = "";
+      btn.disabled = true;
+      hint.textContent = "扫描中，请按住遥控器电源键…";
+      try {
+        const data = await api("/api/xgimi/scan", {
+          method: "POST",
+          body: JSON.stringify({ seconds: 30 }),
+        });
+        if (!data.tokens || !data.tokens.length) {
+          hint.textContent = data.message || "没抓到广播";
+          return;
+        }
+        hint.textContent = "点一个候选填入 token：";
+        for (const token of data.tokens) {
+          const row = document.createElement("div");
+          row.className = "candidate";
+          const kind = token.kind === "ibeacon" ? "iPhone iBeacon"
+            : token.kind === "android" ? "安卓 App" : "遥控器";
+          row.innerHTML = `<code>${token.token}</code><span class="meta">${kind} · ${token.bytes} 字节 · ${token.rssi} dBm · ${token.count} 次</span>`;
+          row.onclick = () => {
+            $("#token").value = token.token;
+            setStatus("已填入 token，记得保存", "ok");
+          };
+          $("#candidates").appendChild(row);
+        }
+      } catch (err) {
+        hint.textContent = `扫描失败：${err.message}`;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function test(action) {
+      try {
+        setStatus(action === "on" ? "发送开机广播…" : "发送关机指令…");
+        const data = await api("/api/xgimi/test", {
+          method: "POST",
+          body: JSON.stringify({ action }),
+        });
+        setStatus(data.success ? "指令已发送" : `失败：${data.message}`, data.success ? "ok" : "err");
+      } catch (err) {
+        setStatus(`失败：${err.message}`, "err");
+      }
+    }
+
+    async function status() {
+      try {
+        const data = await api("/api/xgimi/status");
+        const via = data.on ? (data.via === "ping" ? "，ping 通" : `，${data.via} 可连`) : "";
+        setStatus(data.success ? (data.on ? `投影仪：开机${via}` : "投影仪：关机（端口和 ping 都没响应）") : data.message,
+          data.success ? "ok" : "err");
+      } catch (err) {
+        setStatus(`查询失败：${err.message}`, "err");
+      }
+    }
+
+    $("#save").onclick = save;
+    $("#scan").onclick = scan;
+    $("#test-on").onclick = () => test("on");
+    $("#test-off").onclick = () => test("off");
+    $("#refresh-status").onclick = status;
+    load();
+  </script>
+</body>
+
+</html>
